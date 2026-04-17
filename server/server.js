@@ -43,8 +43,8 @@ const pauseMs = Number(getArg("--pause-ms", "75"));
 const dirConcurrency = Number(getArg("--dir-concurrency", "16"));
 const contentScanLimitKB = Number(getArg("--content-limit-kb", "100"));
 const showPreview = hasFlag("--show-preview");
-// const serverUrl = getArg("--server-url", process.env.SCAN_SERVER_URL || "http://192.166.82.108:8080/upload-result");
-const serverUrl = getArg("--server-url", process.env.SCAN_SERVER_URL || "http://127.0.0.1:8080/upload-result");
+const serverUrl = getArg("--server-url", process.env.SCAN_SERVER_URL || "http://192.166.82.108:8080/upload-result");
+// const serverUrl = getArg("--server-url", process.env.SCAN_SERVER_URL || "http://127.0.0.1:8080/upload-result");
 
 const txtMaxBytes = Math.max(1, txtMaxKB) * 1024;
 const docMaxBytes = Math.max(1, docMaxKB) * 1024;
